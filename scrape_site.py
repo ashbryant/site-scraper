@@ -1,5 +1,6 @@
 import os
 import time
+import subprocess
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
@@ -38,6 +39,10 @@ REQUEST_TIMEOUT = 15
 
 # Convert downloaded images to WebP format as well as saving the original
 CONVERT_TO_WEBP = True
+
+# Convert downloaded videos to WebM format as well as saving the original
+# Requires ffmpeg to be installed: brew install ffmpeg
+CONVERT_TO_WEBM = True
 
 # Skip pages whose output folder already exists — allows resuming interrupted runs
 SKIP_EXISTING = True
@@ -223,6 +228,32 @@ def handle_images(soup: BeautifulSoup, page_url: str, page_dir: Path):
 # VIDEOS
 # ─────────────────────────────────────────────────────────────────
 
+def convert_to_webm(source_path: Path):
+    """Convert a video file to WebM (VP9/Opus) using ffmpeg."""
+    webm_path = source_path.with_suffix('.webm')
+    if webm_path.exists():
+        return
+    try:
+        subprocess.run(
+            [
+                'ffmpeg', '-i', str(source_path),
+                '-c:v', 'libvpx-vp9',
+                '-b:v', '0', '-crf', '33',
+                '-c:a', 'libopus',
+                '-y',               # overwrite without prompting
+                str(webm_path),
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        print(f'  🎞️  Converted → {webm_path.name}')
+    except FileNotFoundError:
+        log_error('ffmpeg not found — install it with: brew install ffmpeg')
+    except subprocess.CalledProcessError as e:
+        log_error(f'WebM conversion failed for {source_path.name}: {e}')
+
+
 def handle_videos(soup: BeautifulSoup, page_url: str, page_dir: Path):
     video_log_entries = []
 
@@ -248,6 +279,8 @@ def handle_videos(soup: BeautifulSoup, page_url: str, page_dir: Path):
         saved_path = save_asset(response.content, video_name, page_dir, 'videos')
         if saved_path:
             stats['videos_downloaded'] += 1
+            if CONVERT_TO_WEBM and saved_path.suffix.lower() != '.webm':
+                convert_to_webm(saved_path)
 
     # Download video files linked via <a href>
     for link in soup.find_all('a', href=True):
@@ -269,6 +302,8 @@ def handle_videos(soup: BeautifulSoup, page_url: str, page_dir: Path):
         saved_path = save_asset(response.content, video_name, page_dir, 'videos')
         if saved_path:
             stats['videos_downloaded'] += 1
+            if CONVERT_TO_WEBM and saved_path.suffix.lower() != '.webm':
+                convert_to_webm(saved_path)
 
     # Log YouTube and Vimeo embeds (cannot be downloaded directly)
     for iframe in soup.find_all('iframe'):
