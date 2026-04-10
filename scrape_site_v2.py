@@ -9,6 +9,7 @@ from PIL import Image
 from io import BytesIO
 import hashlib
 from datetime import datetime
+from typing import Optional
 
 try:
     from tqdm import tqdm
@@ -109,7 +110,7 @@ def slugify(url: str) -> str:
     return path if path else 'home'
 
 
-def fetch(url: str) -> requests.Response | None:
+def fetch(url: str) -> Optional[requests.Response]:
     """Fetch a URL, returning the response or None on failure."""
     try:
         response = SESSION.get(url, timeout=REQUEST_TIMEOUT)
@@ -120,7 +121,7 @@ def fetch(url: str) -> requests.Response | None:
         return None
 
 
-def save_asset(data: bytes, filename: str, page_dir: Path, subdir: str) -> Path | None:
+def save_asset(data: bytes, filename: str, page_dir: Path, subdir: str) -> Optional[Path]:
     """
     Write binary data to disk.
     With DEDUPLICATE_ASSETS enabled, identical files (by MD5) are stored once
