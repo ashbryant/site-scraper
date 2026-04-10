@@ -46,7 +46,7 @@ CONVERT_TO_WEBP = True
 SKIP_EXISTING = True
 
 # Download each shared asset (image, file) only once, even if it appears on multiple pages
-DEDUPLICATE_ASSETS = True
+DEDUPLICATE_ASSETS = False
 
 # Save a Markdown version of each page (page.md) alongside the plain text (text.txt)
 SAVE_MARKDOWN = True
