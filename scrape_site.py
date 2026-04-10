@@ -21,9 +21,6 @@ except ImportError:
 # CONFIGURATION — edit these values before running
 # ─────────────────────────────────────────────────────────────────
 
-# Base URL of the site to scrape
-BASE_URL = 'https://www.ssdistribution.co.uk/'
-
 # Path to your local sitemap.xml (relative to this script)
 SITEMAP_PATH = 'sitemap.xml'
 
@@ -158,11 +155,18 @@ def extract_urls_from_local_sitemap(file_path: Path) -> list[str]:
         return []
 
     soup = BeautifulSoup(content, 'lxml-xml')
-    urls = [
-        loc.text.strip()
-        for loc in soup.find_all('loc')
-        if loc.text.strip().startswith(BASE_URL)
-    ]
+    all_locs = [loc.text.strip() for loc in soup.find_all('loc') if loc.text.strip()]
+
+    if not all_locs:
+        print('❌ No <loc> entries found in sitemap.')
+        return []
+
+    # Derive the base URL from the first entry (scheme + netloc)
+    parsed = urlparse(all_locs[0])
+    base_url = f'{parsed.scheme}://{parsed.netloc}/'
+    print(f'🌐 Detected base URL: {base_url}')
+
+    urls = [u for u in all_locs if u.startswith(base_url)]
     print(f'✅ Found {len(urls)} URLs.\n')
     return urls
 
