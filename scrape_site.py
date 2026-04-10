@@ -461,24 +461,152 @@ def print_summary():
 
 
 # ─────────────────────────────────────────────────────────────────
+# PRE-FLIGHT
+# ─────────────────────────────────────────────────────────────────
+
+def ask_yes_no(prompt: str, default: bool) -> bool:
+    """Prompt for a yes/no answer, showing the current default."""
+    hint = '[Y/n]' if default else '[y/N]'
+    while True:
+        answer = input(f'  {prompt} {hint}: ').strip().lower()
+        if answer == '':
+            return default
+        if answer in ('y', 'yes'):
+            return True
+        if answer in ('n', 'no'):
+            return False
+        print('  Please enter y or n.')
+
+
+def check_ffmpeg() -> bool:
+    """Return True if ffmpeg is available on PATH."""
+    try:
+        subprocess.run(
+            ['ffmpeg', '-version'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+        )
+        return True
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return False
+
+
+def pre_flight() -> bool:
+    """
+    Show current settings, let the user adjust them, check dependencies,
+    then confirm before starting. Returns True if the scrape should proceed.
+    """
+    global OUTPUT_FOLDER, OUTPUT_DIR, ZIP_OUTPUT
+    global SKIP_EXISTING, CONVERT_TO_WEBP, CONVERT_TO_WEBM
+    global SAVE_MARKDOWN, REQUEST_DELAY
+
+    print()
+    print('┌─────────────────────────────────────────────────┐')
+    print('│              Site Scraper — Pre-flight           │')
+    print('└─────────────────────────────────────────────────┘')
+    print()
+
+    # ── Sitemap check ────────────────────────────────────────────
+    sitemap_file = SCRIPT_DIR / SITEMAP_PATH
+    if not sitemap_file.exists():
+        print(f'  ❌ Sitemap not found: {sitemap_file}')
+        print(f'     Place your sitemap.xml in the same folder as this script and try again.')
+        return False
+    print(f'  ✅ Sitemap found: {sitemap_file.name}')
+
+    # ── Output folder ────────────────────────────────────────────
+    print()
+    print(f'  Output folder : {OUTPUT_FOLDER}/')
+    answer = input('  Change output folder name? (press Enter to keep): ').strip()
+    if answer:
+        OUTPUT_FOLDER = answer
+        OUTPUT_DIR    = SCRIPT_DIR / OUTPUT_FOLDER
+        ZIP_OUTPUT    = OUTPUT_FOLDER + '.zip'
+        print(f'  → Set to: {OUTPUT_FOLDER}/')
+
+    # ── Resume ───────────────────────────────────────────────────
+    print()
+    if OUTPUT_DIR.exists():
+        print(f'  ⚠️  Output folder already exists — pages already scraped can be skipped.')
+    SKIP_EXISTING = ask_yes_no('Skip pages already scraped (resume mode)?', SKIP_EXISTING)
+
+    # ── Request delay ────────────────────────────────────────────
+    print()
+    print(f'  Request delay : {REQUEST_DELAY}s between pages')
+    answer = input('  Change delay in seconds? (press Enter to keep): ').strip()
+    if answer:
+        try:
+            REQUEST_DELAY = float(answer)
+            print(f'  → Set to: {REQUEST_DELAY}s')
+        except ValueError:
+            print('  Invalid value — keeping current delay.')
+
+    # ── Content options ──────────────────────────────────────────
+    print()
+    print('  ── What to save ──────────────────────────────────')
+    SAVE_MARKDOWN  = ask_yes_no('Save Markdown version of each page (page.md)?', SAVE_MARKDOWN)
+    CONVERT_TO_WEBP = ask_yes_no('Convert images to WebP?', CONVERT_TO_WEBP)
+
+    # ── Video / ffmpeg ───────────────────────────────────────────
+    print()
+    print('  ── Video ─────────────────────────────────────────')
+    CONVERT_TO_WEBM = ask_yes_no('Convert downloaded videos to WebM?', CONVERT_TO_WEBM)
+    if CONVERT_TO_WEBM:
+        if check_ffmpeg():
+            print('  ✅ ffmpeg is installed.')
+        else:
+            print()
+            print('  ❌ ffmpeg was not found.')
+            print('     To install it, run:  brew install ffmpeg')
+            print('     (If you do not have Homebrew, see: https://brew.sh)')
+            print()
+            disable = ask_yes_no('Continue without WebM conversion?', True)
+            if disable:
+                CONVERT_TO_WEBM = False
+                print('  → WebM conversion disabled for this run.')
+            else:
+                print('  Install ffmpeg and run the script again.')
+                return False
+
+    # ── Summary ──────────────────────────────────────────────────
+    print()
+    print('  ── Ready to scrape ───────────────────────────────')
+    print(f'  Output folder  : {OUTPUT_FOLDER}/')
+    print(f'  Resume mode    : {"on" if SKIP_EXISTING else "off"}')
+    print(f'  Request delay  : {REQUEST_DELAY}s')
+    print(f'  Save Markdown  : {"yes" if SAVE_MARKDOWN else "no"}')
+    print(f'  WebP images    : {"yes" if CONVERT_TO_WEBP else "no"}')
+    print(f'  WebM videos    : {"yes" if CONVERT_TO_WEBM else "no"}')
+    print()
+
+    go = ask_yes_no('Start scraping now?', True)
+    print()
+    return go
+
+
+# ─────────────────────────────────────────────────────────────────
 # ENTRY POINT
 # ─────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    OUTPUT_DIR.mkdir(exist_ok=True)
-    if DEDUPLICATE_ASSETS:
-        ASSETS_DIR.mkdir(exist_ok=True)
-
-    sitemap_file = SCRIPT_DIR / SITEMAP_PATH
-    pages = extract_urls_from_local_sitemap(sitemap_file)
-
-    if not pages:
-        print('⚠️  No pages found. Check SITEMAP_PATH and BASE_URL in the config section.')
+    if not pre_flight():
+        print('Aborted.')
     else:
-        iterator = tqdm(pages, desc='Scraping pages', unit='page') if TQDM_AVAILABLE else pages
-        for page_url in iterator:
-            scrape_page(page_url)
-            time.sleep(REQUEST_DELAY)
+        OUTPUT_DIR.mkdir(exist_ok=True)
+        if DEDUPLICATE_ASSETS:
+            ASSETS_DIR.mkdir(exist_ok=True)
 
-        zip_dir(OUTPUT_DIR, SCRIPT_DIR / ZIP_OUTPUT)
-        print_summary()
+        sitemap_file = SCRIPT_DIR / SITEMAP_PATH
+        pages = extract_urls_from_local_sitemap(sitemap_file)
+
+        if not pages:
+            print('⚠️  No pages found. Check your sitemap.')
+        else:
+            iterator = tqdm(pages, desc='Scraping pages', unit='page') if TQDM_AVAILABLE else pages
+            for page_url in iterator:
+                scrape_page(page_url)
+                time.sleep(REQUEST_DELAY)
+
+            zip_dir(OUTPUT_DIR, SCRIPT_DIR / ZIP_OUTPUT)
+            print_summary()
