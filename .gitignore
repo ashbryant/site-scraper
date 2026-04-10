@@ -1,0 +1,7 @@
+scraped_site/
+scraped_site.zip
+sitemap.xml
+*.pyc
+__pycache__/
+.DS_Store
+errors.log
